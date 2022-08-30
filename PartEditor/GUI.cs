@@ -10,50 +10,49 @@ using SFS.UI.ModGUI;
 using UnityEngine;
 using UnityEngine.UI;
 using Object = UnityEngine.Object;
+using Type = SFS.UI.ModGUI.Type;
 
 // ReSharper disable InconsistentNaming
 namespace PartEditor
 {
     public static class GUI
     {
-        private static GameObject holder;
+        public static bool forced;
+        static GameObject holder;
 
-        public static Window window;
+        public static readonly int WindowID = Builder.GetRandomID();
 
-        private static Part lastPart;
+        static Part lastPart;
 
-        private static TextInput positionX_Field;
-        private static TextInput positionY_Field;
-        private static TextInput orientationX_Field;
-        private static TextInput orientationY_Field;
-        private static TextInput orientationZ_Field;
+        static TextInput positionX_Field;
+        static TextInput positionY_Field;
+        static TextInput orientationX_Field;
+        static TextInput orientationY_Field;
+        static TextInput orientationZ_Field;
 
-        private static List<(string, TextInput)> doubleVariables;
-        private static List<(string, TextInput)> stringVariables;
+        static List<(string, TextInput)> doubleVariables;
+        static List<(string, TextInput)> stringVariables;
 
         public static void UpdateGUI(Part part = null)
         {
-            if (part == lastPart && holder != null && window != null)
+            if (part == lastPart && !forced)
                 return;
+            
+            forced = false;
 
             DestroyGUI();
             lastPart = part;
-            holder = new GameObject("PartEditor GUI Holder");
+            holder = Builder.CreateHolder(Builder.SceneToAttach.CurrentScene,"PartEditor GUI Holder");
 
             // Scaling to 90%
             holder.transform.localScale = new Vector3(0.9f, 0.9f);
 
-            Builder.AttachToCanvas(holder, Builder.SceneToAttach.CurrentScene);
-
             // Main window
-            window = Builder.CreateWindow(holder, 350, 450, window != null ? Mathf.RoundToInt(window.Position.x) : 200,
-                window != null ? Mathf.RoundToInt(window.Position.y) : 200, true, 1, "Part Editor");
+            Window window = Builder.CreateWindow(holder.transform, WindowID, 350, 450, 200, 200, true, true, 1, "Part Editor");
 
             // Layout in window
-            window.CreateLayoutGroup(LayoutType.Vertical).spacing = 20f;
-            window.CreateLayoutGroup(LayoutType.Vertical).DisableChildControl();
-            window.CreateLayoutGroup(LayoutType.Vertical).childAlignment = TextAnchor.MiddleCenter;
-
+            window.CreateLayoutGroup(Type.Vertical);
+            
             if (part == null)
             {
                 window.Size = new Vector2(350, 100);
@@ -62,32 +61,32 @@ namespace PartEditor
             }
 
             // Enable scrolling
-            window.ChildrenHolder.GetComponent<ScrollElement>().vertical = true;
+            window.EnableScrolling(Type.Vertical);
 
             // Position
-            Box positionBox = CustomBox(320, "Position");
-            positionX_Field = CreateNumberInput(positionBox.gameObject, 320, 50, 0.1f, "X:", 0.2f,
+            Box positionBox = CustomBox(320, "Position", window);
+            positionX_Field = CreateNumberInput(positionBox, 320, 50, 0.1f, "X:", 0.2f,
                 part.Position.x, UpdateValues);
-            positionY_Field = CreateNumberInput(positionBox.gameObject, 320, 50, 0.1f, "Y:", 0.2f,
+            positionY_Field = CreateNumberInput(positionBox, 320, 50, 0.1f, "Y:", 0.2f,
                 part.Position.y, UpdateValues);
 
             // Orientation
-            Box orientationBox = CustomBox(320, "Orientation");
-            orientationX_Field = CreateNumberInput(orientationBox.gameObject, 320, 50, 0.1f, "X:", 0.2f,
+            Box orientationBox = CustomBox(320, "Orientation", window);
+            orientationX_Field = CreateNumberInput(orientationBox, 320, 50, 0.1f, "X:", 0.2f,
                 part.orientation.orientation.Value.x, UpdateValues);
-            orientationY_Field = CreateNumberInput(orientationBox.gameObject, 320, 50, 0.1f, "Y:", 0.2f,
+            orientationY_Field = CreateNumberInput(orientationBox, 320, 50, 0.1f, "Y:", 0.2f,
                 part.orientation.orientation.Value.y, UpdateValues);
-            orientationZ_Field = CreateNumberInput(orientationBox.gameObject, 320, 50, -1, "Z:", 0.2f,
+            orientationZ_Field = CreateNumberInput(orientationBox, 320, 50, -1, "Z:", 0.2f,
                 part.orientation.orientation.Value.z, UpdateValues);
 
             // Double variables
             doubleVariables = new List<(string, TextInput)>();
             if (part.variablesModule.doubleVariables.saves.Any(x => x.save))
             {
-                Box doubleVariablesBox = CustomBox(320, "Number Variables");
+                Box doubleVariablesBox = CustomBox(320, "Number Variables", window);
                 foreach (string key in part.variablesModule.doubleVariables.GetSaveDictionary().Keys)
                     doubleVariables.Add((key,
-                        CreateNumberInput(doubleVariablesBox.gameObject, 320, 50, 0.1f, key + ":", 0.3f,
+                        CreateNumberInput(doubleVariablesBox, 320, 50, 0.1f, key + ":", 0.3f,
                             (float)part.variablesModule.doubleVariables.GetValue(key), UpdateValues, 0.7f)));
             }
 
@@ -95,25 +94,24 @@ namespace PartEditor
             stringVariables = new List<(string, TextInput)>();
             if (part.variablesModule.stringVariables.saves.Any(x => x.save))
             {
-                Box stringVariablesBox = CustomBox(320, "String Variables");
+                Box stringVariablesBox = CustomBox(320, "String Variables", window);
                 foreach (string key in part.variablesModule.stringVariables.GetSaveDictionary().Keys)
                     stringVariables.Add((key,
-                        CreateStringInput(stringVariablesBox.gameObject, 320, 50, key + ":", 0.3f,
+                        CreateStringInput(stringVariablesBox, 320, 50, key + ":", 0.3f,
                             part.variablesModule.stringVariables.GetValue(key), 0.7f)));
             }
 
             if (part.variablesModule.boolVariables.saves.Any(x => x.save))
             {
-                Box boolVariablesBox = CustomBox(320, "Bool Variables");
+                Box boolVariablesBox = CustomBox(320, "Bool Variables", window);
                 foreach (string key in part.variablesModule.boolVariables.GetSaveDictionary().Keys)
-                    CreateBoolInput(boolVariablesBox.gameObject, 320, 50, key + ":", 0.6f,
+                    CreateBoolInput(boolVariablesBox, 320, 50, key + ":", 0.6f,
                         () => part.variablesModule.boolVariables.GetValue(key),
                         () => part.variablesModule.boolVariables.SetValue(key,
                             !part.variablesModule.boolVariables.GetValue(key)), 0.7f);
             }
 
-            Builder.CreateButton(window.ChildrenHolder, 280, 60, 0, 0, UpdateValues, "Apply changes",
-                Builder.Style.Blue);
+            Builder.CreateButton(window.ChildrenHolder, 280, 60, 0, 0, UpdateValues, "Apply changes");
 
             void UpdateValues()
             {
@@ -148,7 +146,7 @@ namespace PartEditor
             holder = null;
         }
 
-        private static TextInput CreateNumberInput(GameObject parent, int width, int height, float changeStep,
+        static TextInput CreateNumberInput(Transform parent, int width, int height, float changeStep,
             string title, float titleSizeMultiplier, float currentValue, Action applyChanges,
             float titleHeightMultiplier = 1)
         {
@@ -157,15 +155,13 @@ namespace PartEditor
             int buttonHeight = Mathf.RoundToInt(height * 0.6f);
             int inputWidth = width - labelWidth - buttonWidth * 2 - 50;
 
-            TextInput input = Builder.CreateTextInput(holder, inputWidth, height, 0, 0, currentValue.ToString("G",
-                CultureInfo.InvariantCulture), style: Builder.Style.Blue);
+            TextInput input = Builder.CreateTextInput(holder.transform, inputWidth, height, 0, 0, currentValue.ToString("G",
+                CultureInfo.InvariantCulture));
 
             Container container = Builder.CreateContainer(parent, 0, 0);
-            container.CreateLayoutGroup(LayoutType.Horizontal).spacing = 5f;
-            container.CreateLayoutGroup(LayoutType.Horizontal).DisableChildControl();
-            container.CreateLayoutGroup(LayoutType.Horizontal).childAlignment = TextAnchor.MiddleCenter;
+            container.CreateLayoutGroup(Type.Horizontal, spacing: 5f);
 
-            Builder.CreateLabel(container.gameObject, labelWidth,
+            Builder.CreateLabel(container, labelWidth,
                 Mathf.RoundToInt(height * 0.8f * titleHeightMultiplier), 0, 0, title);
 
             void OnClick(float m)
@@ -174,34 +170,31 @@ namespace PartEditor
                 applyChanges.Invoke();
             }
 
-            Builder.CreateButton(container.gameObject, buttonWidth, buttonHeight, 0, 0,
-                () => OnClick(-1), "<", Builder.Style.Blue);
+            Builder.CreateButton(container, buttonWidth, buttonHeight, 0, 0,
+                () => OnClick(-1), "<");
             input.rectTransform.SetParent(container.rectTransform);
-            Builder.CreateButton(container.gameObject, buttonWidth, buttonHeight, 0, 0,
-                () => OnClick(1), ">", Builder.Style.Blue);
+            Builder.CreateButton(container, buttonWidth, buttonHeight, 0, 0,
+                () => OnClick(1), ">");
 
             return input;
         }
 
-        private static TextInput CreateStringInput(GameObject parent, int width, int height,
+        static TextInput CreateStringInput(Transform parent, int width, int height,
             string title, float titleSizeMultiplier, string currentValue, float titleHeightMultiplier = 1)
         {
             int labelWidth = Mathf.RoundToInt((width - 20) * titleSizeMultiplier);
             int inputWidth = width - labelWidth - 30;
             Container container = Builder.CreateContainer(parent, 0, 0);
-            container.CreateLayoutGroup(LayoutType.Horizontal).spacing = 5f;
-            container.CreateLayoutGroup(LayoutType.Horizontal).DisableChildControl();
-            container.CreateLayoutGroup(LayoutType.Horizontal).childAlignment = TextAnchor.MiddleCenter;
+            container.CreateLayoutGroup(Type.Horizontal, spacing: 5f);
 
-            Builder.CreateLabel(container.gameObject, labelWidth,
+            Builder.CreateLabel(container, labelWidth,
                 Mathf.RoundToInt(height * 0.8f * titleHeightMultiplier), 0, 0, title);
-            TextInput input = Builder.CreateTextInput(container.gameObject, inputWidth, height, 0, 0, currentValue,
-                style: Builder.Style.Blue);
+            TextInput input = Builder.CreateTextInput(container, inputWidth, height, 0, 0, currentValue);
 
             return input;
         }
 
-        private static void CreateBoolInput(GameObject parent, int width, int height,
+        static void CreateBoolInput(Transform parent, int width, int height,
             string title, float titleSizeMultiplier, Func<bool> get, Action onChange, float titleHeightMultiplier = 1)
         {
             const int toggleWidth = 80;
@@ -209,36 +202,31 @@ namespace PartEditor
             int space = width - 20 - toggleWidth - labelWidth;
 
             Container container = Builder.CreateContainer(parent, 0, 0);
-            container.CreateLayoutGroup(LayoutType.Horizontal).spacing = space;
-            container.CreateLayoutGroup(LayoutType.Horizontal).DisableChildControl();
-            container.CreateLayoutGroup(LayoutType.Horizontal).childAlignment = TextAnchor.MiddleCenter;
+            container.CreateLayoutGroup(Type.Horizontal, spacing: space);
 
-            Builder.CreateLabel(container.gameObject, labelWidth,
+            Builder.CreateLabel(container, labelWidth,
                 Mathf.RoundToInt(height * 0.8f * titleHeightMultiplier), 0, 0, title);
 
-            Builder.CreateToggle(container.gameObject, 0, 0, get, onChange);
+            Builder.CreateToggle(container, get, onChange: onChange);
         }
 
-        private static void ChangeAsNumber(this TextInput input, float change)
+        static void ChangeAsNumber(this TextInput input, float change)
         {
             input.Text =
                 (float.Parse(input.Text, NumberStyles.Any, CultureInfo.InvariantCulture) + change).ToString("G",
                     CultureInfo.InvariantCulture);
         }
 
-        private static Box CustomBox(int width, string label)
+        static Box CustomBox(int width, string label, Window window)
         {
-            Box box = Builder.CreateBox(window.ChildrenHolder, width, 10);
-            
+            Box box = Builder.CreateBox(window, width, 10);
+
             // Auto resize for box
             box.gameObject.AddComponent<ContentSizeFitter>().verticalFit =
                 ContentSizeFitter.FitMode.PreferredSize;
 
-            box.CreateLayoutGroup(LayoutType.Vertical).spacing = 10f;
-            box.CreateLayoutGroup(LayoutType.Vertical).DisableChildControl();
-            box.CreateLayoutGroup(LayoutType.Vertical).childAlignment = TextAnchor.MiddleCenter;
-            box.CreateLayoutGroup(LayoutType.Vertical).padding = new RectOffset(0, 0, 5, 5);
-            Builder.CreateLabel(box.gameObject, width, 35, 0, 0, label);
+            box.CreateLayoutGroup(Type.Vertical, spacing: 10f, padding: new RectOffset(0, 0, 5, 5));
+            Builder.CreateLabel(box, width, 35, 0, 0, label);
 
             return box;
         }

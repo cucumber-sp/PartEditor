@@ -8,30 +8,31 @@ namespace PartEditor
 {
     public class Main : Mod
     {
-        public Main() : base("parteditor", "Part Editor", "CucumberSpace", "0.5.7", "v1.0", "Edit all part stats!")
-        {
-        }
-
         public override void Load()
         {
             SceneHelper.OnSceneLoaded += (x) =>
             {
-                GUI.window = null;
                 if (x.name == "Build_PC")
                     new GameObject().AddComponent<Module_>();
-                else
-                    GUI.DestroyGUI();
             };
         }
 
-        public override void Unload()
-        {
-        }
+        public override string ModNameID => "parteditor";
+        public override string DisplayName => "Part Editor";
+        public override string Author => "CucumberSpace";
+        public override string MinimumGameVersionNecessary => "1.5.7";
+        public override string ModVersion => "1.0";
+        public override string Description => "Edit all part stats!";
     }
 
     public class Module_ : MonoBehaviour
     {
-        private void Update()
+        void Start()
+        {
+            GUI.forced = true;
+        }
+
+        void Update()
         {
             try
             {
