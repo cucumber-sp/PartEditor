@@ -1,48 +1,38 @@
-﻿using System;
+﻿using System.Collections.Generic;
+using System.Linq;
 using ModLoader;
 using ModLoader.Helpers;
 using SFS.Builds;
-using UnityEngine;
+using SFS.IO;
+using UITools;
 
 namespace PartEditor
 {
-    public class Main : Mod
+    public class Main : Mod, IUpdatable
     {
+        public static Main main;
+        public Main() => main = this;
+        
         public override void Load()
         {
-            SceneHelper.OnSceneLoaded += (x) =>
+            Config.Setup();
+            ConfigGUI.Setup();
+            SceneHelper.OnBuildSceneLoaded += () =>
             {
-                if (x.name == "Build_PC")
-                    new GameObject().AddComponent<Module_>();
+                GUI.Setup();
+                BuildManager.main.selector.onSelectedChange += () => GUI.CurrentPart.Value = BuildManager.main.selector.selected.Count == 1 ? BuildManager.main.selector.selected.First() : null;
             };
         }
 
         public override string ModNameID => "parteditor";
         public override string DisplayName => "Part Editor";
         public override string Author => "CucumberSpace";
-        public override string MinimumGameVersionNecessary => "1.5.7";
+        public override string MinimumGameVersionNecessary => "1.5.9.6";
         public override string ModVersion => "1.0";
         public override string Description => "Edit all part stats!";
-    }
-
-    public class Module_ : MonoBehaviour
-    {
-        void Start()
-        {
-            GUI.forced = true;
-        }
-
-        void Update()
-        {
-            try
-            {
-                GUI.UpdateGUI(BuildManager.main.selector.selected.Count > 0 ?BuildManager.main.selector.selected[0] : null);
-            }
-            catch (Exception e)
-            {
-                Debug.LogException(e);
-            }
-            
-        }
+        public override Dictionary<string, string> Dependencies { get; } = new () { {"UITools", "1.0"} };
+        public new FolderPath ModFolder => new (base.ModFolder);
+        
+        public Dictionary<string, FilePath> UpdatableFiles => new () {{"https://github.com/cucumber-sp/PartEditor/releases/latest/download/PartEditor.dll", new FolderPath(ModFolder).ExtendToFile("PartEditor.dll")}};
     }
 }

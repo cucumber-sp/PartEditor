@@ -1,234 +1,191 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
-using System.Linq;
-using SFS.Builds;
+using Cysharp.Threading.Tasks;
 using SFS.Parts;
 using SFS.Parts.Modules;
-using SFS.UI;
 using SFS.UI.ModGUI;
+using TMPro;
+using UITools;
 using UnityEngine;
 using UnityEngine.UI;
 using Object = UnityEngine.Object;
 using Type = SFS.UI.ModGUI.Type;
 
-// ReSharper disable InconsistentNaming
 namespace PartEditor
 {
     public static class GUI
     {
-        public static bool forced;
+        public static readonly Part_Local CurrentPart = new ();
+
         static GameObject holder;
+        static Window window;
 
-        public static readonly int WindowID = Builder.GetRandomID();
-
-        static Part lastPart;
-
-        static TextInput positionX_Field;
-        static TextInput positionY_Field;
-        static TextInput orientationX_Field;
-        static TextInput orientationY_Field;
-        static TextInput orientationZ_Field;
-
-        static List<(string, TextInput)> doubleVariables;
-        static List<(string, TextInput)> stringVariables;
-
-        public static void UpdateGUI(Part part = null)
+        static bool setup;
+        public static void Setup()
         {
-            if (part == lastPart && !forced)
-                return;
+            if (!setup)
+            {
+                CurrentPart.OnChange += RegenerateWindow;
+                Config.settings.windowSize.OnChange += () => RegenerateWindow(CurrentPart.Value);
+                Config.settings.stretchToFit.OnChange += () => RegenerateWindow(CurrentPart.Value);
+            }
+            else 
+                RegenerateWindow(null);
+            setup = true;
+        }
+
+        static async void RegenerateWindow(Part part)
+        {
+            Vector2Int size = Config.settings.windowSize.Value;
             
-            forced = false;
+            if (holder == null)
+            {
+                holder = Builder.CreateHolder(Builder.SceneToAttach.CurrentScene, "PartEditor Holder");
+                holder.transform.localScale = new Vector3(0.9f, 0.9f);
+            }
 
-            DestroyGUI();
-            lastPart = part;
-            holder = Builder.CreateHolder(Builder.SceneToAttach.CurrentScene,"PartEditor GUI Holder");
+            Vector2 canvasResolution = UIUtility.CanvasPixelSize;
+            if (window == null || window.gameObject == null)
+            {
+                window = UIToolsBuilder.CreateClosableWindow(holder.transform, 0, size.x, size.y, (int)canvasResolution.x / 2 - 100,
+                    (int)canvasResolution.y / 2 - 50, true, false, 1, "Part Editor");
+                window.CreateLayoutGroup(Type.Vertical);
+                window.EnableScrolling(Type.Vertical);
+            }
 
-            // Scaling to 90%
-            holder.transform.localScale = new Vector3(0.9f, 0.9f);
-
-            // Main window
-            Window window = Builder.CreateWindow(holder.transform, WindowID, 350, 450, 200, 200, true, true, 1, "Part Editor");
-
-            // Layout in window
-            window.CreateLayoutGroup(Type.Vertical);
+            // Destroying window content
+            for (int i = 0; i < window.ChildrenHolder.childCount; i++)
+                Object.Destroy(window.ChildrenHolder.GetChild(i).gameObject);
             
+            window.RegisterPermanentSaving("PartEditor.MainWindow");
+
             if (part == null)
             {
-                window.Size = new Vector2(350, 100);
-                Builder.CreateLabel(window.ChildrenHolder, 300, 30, 0, 0, "Select a part").Opacity = 0.5f;
+                window.Size = new Vector2(size.x, 100);
+                Builder.CreateLabel(window, size.x - 50, 30, text: "Select a part").Opacity = 0.8f;
                 return;
             }
 
-            // Enable scrolling
-            window.EnableScrolling(Type.Vertical);
-
+            window.Size = size;
+            
             // Position
-            Box positionBox = CustomBox(320, "Position", window);
-            positionX_Field = CreateNumberInput(positionBox, 320, 50, 0.1f, "X:", 0.2f,
-                part.Position.x, UpdateValues);
-            positionY_Field = CreateNumberInput(positionBox, 320, 50, 0.1f, "Y:", 0.2f,
-                part.Position.y, UpdateValues);
-
+            Box positionBox = CreateContentBox(window, size.x - 30, "Position");
+            CreateNumberInput(positionBox, size.x - 50, 50, 0.8f, "X", part.Position.x, Config.settings.numberChangeStep, ApplyPositionX);
+            CreateNumberInput(positionBox, size.x - 50, 50, 0.8f, "Y", part.Position.y, Config.settings.numberChangeStep, ApplyPositionY);
+            
             // Orientation
-            Box orientationBox = CustomBox(320, "Orientation", window);
-            orientationX_Field = CreateNumberInput(orientationBox, 320, 50, 0.1f, "X:", 0.2f,
-                part.orientation.orientation.Value.x, UpdateValues);
-            orientationY_Field = CreateNumberInput(orientationBox, 320, 50, 0.1f, "Y:", 0.2f,
-                part.orientation.orientation.Value.y, UpdateValues);
-            orientationZ_Field = CreateNumberInput(orientationBox, 320, 50, -1, "Z:", 0.2f,
-                part.orientation.orientation.Value.z, UpdateValues);
+            Box orientationBox = CreateContentBox(window, size.x - 30, "Orientation");
+            CreateNumberInput(orientationBox, size.x - 50, 50, 0.8f, "X", part.orientation.orientation.Value.x, Config.settings.numberChangeStep, ApplyOrientationX);
+            CreateNumberInput(orientationBox, size.x - 50, 50, 0.8f, "Y", part.orientation.orientation.Value.y, Config.settings.numberChangeStep, ApplyOrientationY);
+            CreateNumberInput(orientationBox, size.x - 50, 50, 0.8f, "Z", part.orientation.orientation.Value.z, -Config.settings.degreeChangeStep, ApplyOrientationZ);
 
-            // Double variables
-            doubleVariables = new List<(string, TextInput)>();
-            if (part.variablesModule.doubleVariables.saves.Any(x => x.save))
+            if (part.variablesModule.doubleVariables.GetSaveDictionary().Count > 0)
             {
-                Box doubleVariablesBox = CustomBox(320, "Number Variables", window);
-                foreach (string key in part.variablesModule.doubleVariables.GetSaveDictionary().Keys)
-                    doubleVariables.Add((key,
-                        CreateNumberInput(doubleVariablesBox, 320, 50, 0.1f, key + ":", 0.3f,
-                            (float)part.variablesModule.doubleVariables.GetValue(key), UpdateValues, 0.7f)));
+                Box doublesBox = CreateContentBox(window, size.x - 30, "Double Variables");
+                foreach (KeyValuePair<string, double> save in part.variablesModule.doubleVariables.GetSaveDictionary())
+                    CreateNumberInput(doublesBox, size.x - 50, 50, 0.55f, save.Key, (float) save.Value, Config.settings.numberChangeStep, f => ApplyDoubleVariable(save.Key, f), true, 18);
+            }
+            
+            if (part.variablesModule.stringVariables.GetSaveDictionary().Count > 0)
+            {
+                Box stringsBox = CreateContentBox(window, size.x - 30, "String Variables");
+                foreach (KeyValuePair<string, string> save in part.variablesModule.stringVariables.GetSaveDictionary())
+                {
+                    InputWithLabel input = Builder.CreateInputWithLabel(stringsBox, size.x - 50, 50, 0, 0, save.Key, save.Value, s => ApplyStringVariable(save.Key, s));
+                    input.label.AutoFontResize = false;
+                    input.label.FontSize = 18;
+                }
+            }
+            
+            if (part.variablesModule.boolVariables.GetSaveDictionary().Count > 0)
+            {
+                Box boolsBox = CreateContentBox(window, size.x - 30, "Bool Variables");
+                foreach (KeyValuePair<string, bool> save in part.variablesModule.boolVariables.GetSaveDictionary())
+                {
+                    ToggleWithLabel toggle = Builder.CreateToggleWithLabel(boolsBox, size.x - 50, 50, () => part.variablesModule.boolVariables.GetValue(save.Key), () => InvertBoolVariable(save.Key), labelText:save.Key);
+                    toggle.label.AutoFontResize = false;
+                    toggle.label.FontSize = 18;
+                }
             }
 
-            // String variables
-            stringVariables = new List<(string, TextInput)>();
-            if (part.variablesModule.stringVariables.saves.Any(x => x.save))
+            if (Config.settings.stretchToFit.Value)
             {
-                Box stringVariablesBox = CustomBox(320, "String Variables", window);
-                foreach (string key in part.variablesModule.stringVariables.GetSaveDictionary().Keys)
-                    stringVariables.Add((key,
-                        CreateStringInput(stringVariablesBox, 320, 50, key + ":", 0.3f,
-                            part.variablesModule.stringVariables.GetValue(key), 0.7f)));
+                LayoutRebuilder.ForceRebuildLayoutImmediate(window.ChildrenHolder as RectTransform);
+                // Needs to wait 2 frames before UI fully drawn
+                await UniTask.Yield();
+                await UniTask.Yield();
+                window.Size = new Vector2(size.x, (window.ChildrenHolder as RectTransform).rect.height + 60);
             }
-
-            if (part.variablesModule.boolVariables.saves.Any(x => x.save))
+            else
+                LayoutRebuilder.ForceRebuildLayoutImmediate(window.ChildrenHolder as RectTransform);
+            
+            void ApplyPositionX(float x) => part.Position = new Vector2(x, part.Position.y);
+            void ApplyPositionY(float y) => part.Position = new Vector2(part.Position.x, y);
+            
+            void ApplyOrientationX(float x)
             {
-                Box boolVariablesBox = CustomBox(320, "Bool Variables", window);
-                foreach (string key in part.variablesModule.boolVariables.GetSaveDictionary().Keys)
-                    CreateBoolInput(boolVariablesBox, 320, 50, key + ":", 0.6f,
-                        () => part.variablesModule.boolVariables.GetValue(key),
-                        () => part.variablesModule.boolVariables.SetValue(key,
-                            !part.variablesModule.boolVariables.GetValue(key)), 0.7f);
-            }
-
-            Builder.CreateButton(window.ChildrenHolder, 280, 60, 0, 0, UpdateValues, "Apply changes");
-
-            void UpdateValues()
-            {
-                part.Position =
-                    new Vector2(float.Parse(positionX_Field.Text, NumberStyles.Any, CultureInfo.InvariantCulture),
-                        float.Parse(positionY_Field.Text, NumberStyles.Any, CultureInfo.InvariantCulture));
-
-                part.orientation.orientation.Value = new Orientation(
-                    float.Parse(orientationX_Field.Text, NumberStyles.Any, CultureInfo.InvariantCulture),
-                    float.Parse(orientationY_Field.Text, NumberStyles.Any, CultureInfo.InvariantCulture),
-                    float.Parse(orientationZ_Field.Text, NumberStyles.Any, CultureInfo.InvariantCulture));
-
-                if (doubleVariables.Count > 0)
-                    foreach ((string, TextInput) variable in doubleVariables)
-                        part.variablesModule.doubleVariables.SetValue(variable.Item1,
-                            double.Parse(variable.Item2.Text, NumberStyles.Any, CultureInfo.InvariantCulture));
-
-                if (stringVariables.Count > 0)
-                    foreach ((string, TextInput) variable in stringVariables)
-                        part.variablesModule.stringVariables.SetValue(variable.Item1, variable.Item2.Text);
-
+                Orientation orientation = part.orientation.orientation.Value;
+                part.orientation.orientation.Value = new Orientation(x, orientation.y, orientation.z);
                 part.RegenerateMesh();
-                AdaptModule.UpdateAdaptation(BuildManager.main.buildGrid.activeGrid.partsHolder.parts.ToArray());
             }
-        }
-
-        public static void DestroyGUI()
-        {
-            if (holder == null)
-                return;
-            Object.Destroy(holder);
-            holder = null;
-        }
-
-        static TextInput CreateNumberInput(Transform parent, int width, int height, float changeStep,
-            string title, float titleSizeMultiplier, float currentValue, Action applyChanges,
-            float titleHeightMultiplier = 1)
-        {
-            int labelWidth = Mathf.RoundToInt((width - 20) * titleSizeMultiplier);
-            int buttonWidth = Mathf.RoundToInt(height * 0.7f);
-            int buttonHeight = Mathf.RoundToInt(height * 0.6f);
-            int inputWidth = width - labelWidth - buttonWidth * 2 - 50;
-
-            TextInput input = Builder.CreateTextInput(holder.transform, inputWidth, height, 0, 0, currentValue.ToString("G",
-                CultureInfo.InvariantCulture));
-
-            Container container = Builder.CreateContainer(parent, 0, 0);
-            container.CreateLayoutGroup(Type.Horizontal, spacing: 5f);
-
-            Builder.CreateLabel(container, labelWidth,
-                Mathf.RoundToInt(height * 0.8f * titleHeightMultiplier), 0, 0, title);
-
-            void OnClick(float m)
+            void ApplyOrientationY(float y)
             {
-                input.ChangeAsNumber(changeStep * m);
-                applyChanges.Invoke();
+                Orientation orientation = part.orientation.orientation.Value;
+                part.orientation.orientation.Value = new Orientation(orientation.x, y, orientation.z);
+                part.RegenerateMesh();
+            }
+            void ApplyOrientationZ(float z)
+            {
+                Orientation orientation = part.orientation.orientation.Value;
+                part.orientation.orientation.Value = new Orientation(orientation.x, orientation.y, z);
+                part.RegenerateMesh();
             }
 
-            Builder.CreateButton(container, buttonWidth, buttonHeight, 0, 0,
-                () => OnClick(-1), "<");
-            input.rectTransform.SetParent(container.rectTransform);
-            Builder.CreateButton(container, buttonWidth, buttonHeight, 0, 0,
-                () => OnClick(1), ">");
-
-            return input;
+            void ApplyDoubleVariable(string name, float value)
+            {
+                part.variablesModule.doubleVariables.SetValue(name, value, (true, true));
+                part.RegenerateMesh();
+                AdaptModule.UpdateAdaptation(part);
+            }
+            void ApplyStringVariable(string name, string value)
+            {
+                part.variablesModule.stringVariables.SetValue(name, value, (true, true));
+                part.RegenerateMesh();
+                AdaptModule.UpdateAdaptation(part);
+            }
+            void InvertBoolVariable(string name)
+            {
+                part.variablesModule.boolVariables.SetValue(name, !part.variablesModule.boolVariables.GetValue(name), (true, true));
+                part.RegenerateMesh();
+                AdaptModule.UpdateAdaptation(part);
+            }
         }
 
-        static TextInput CreateStringInput(Transform parent, int width, int height,
-            string title, float titleSizeMultiplier, string currentValue, float titleHeightMultiplier = 1)
+        static Box CreateContentBox(Transform parent, int width, string label)
         {
-            int labelWidth = Mathf.RoundToInt((width - 20) * titleSizeMultiplier);
-            int inputWidth = width - labelWidth - 30;
-            Container container = Builder.CreateContainer(parent, 0, 0);
-            container.CreateLayoutGroup(Type.Horizontal, spacing: 5f);
-
-            Builder.CreateLabel(container, labelWidth,
-                Mathf.RoundToInt(height * 0.8f * titleHeightMultiplier), 0, 0, title);
-            TextInput input = Builder.CreateTextInput(container, inputWidth, height, 0, 0, currentValue);
-
-            return input;
-        }
-
-        static void CreateBoolInput(Transform parent, int width, int height,
-            string title, float titleSizeMultiplier, Func<bool> get, Action onChange, float titleHeightMultiplier = 1)
-        {
-            const int toggleWidth = 80;
-            int labelWidth = Mathf.RoundToInt((width - 20) * titleSizeMultiplier);
-            int space = width - 20 - toggleWidth - labelWidth;
-
-            Container container = Builder.CreateContainer(parent, 0, 0);
-            container.CreateLayoutGroup(Type.Horizontal, spacing: space);
-
-            Builder.CreateLabel(container, labelWidth,
-                Mathf.RoundToInt(height * 0.8f * titleHeightMultiplier), 0, 0, title);
-
-            Builder.CreateToggle(container, get, onChange: onChange);
-        }
-
-        static void ChangeAsNumber(this TextInput input, float change)
-        {
-            input.Text =
-                (float.Parse(input.Text, NumberStyles.Any, CultureInfo.InvariantCulture) + change).ToString("G",
-                    CultureInfo.InvariantCulture);
-        }
-
-        static Box CustomBox(int width, string label, Window window)
-        {
-            Box box = Builder.CreateBox(window, width, 10);
-
-            // Auto resize for box
-            box.gameObject.AddComponent<ContentSizeFitter>().verticalFit =
-                ContentSizeFitter.FitMode.PreferredSize;
-
-            box.CreateLayoutGroup(Type.Vertical, spacing: 10f, padding: new RectOffset(0, 0, 5, 5));
-            Builder.CreateLabel(box, width, 35, 0, 0, label);
-
+            Box box = Builder.CreateBox(parent, width, 10);
+            box.CreateLayoutGroup(Type.Vertical, spacing: 5f, padding: new RectOffset(0, 0, 5, 5));
+            // Enable auto-resizing
+            box.gameObject.AddComponent<ContentSizeFitter>().verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+            Builder.CreateLabel(box, width, 35, text: label);
+            
             return box;
+        }
+
+        public static void CreateNumberInput(Transform parent, int width, int height, float inputWidthRatio, string label, float value, float step, Action<float> onChange, bool fixedFontSize = false, float fontSize = 0)
+        {
+            Container container = Builder.CreateContainer(parent);
+            container.CreateLayoutGroup(Type.Horizontal);
+            
+            Label title = Builder.CreateLabel(container, (int)((width - 20) * (1 - inputWidthRatio)), (int)(height * 0.8f), text: label);
+            title.TextAlignment = TextAlignmentOptions.MidlineLeft;
+            if (fixedFontSize)
+            {
+                title.AutoFontResize = false;
+                title.FontSize = fontSize;
+            }
+            
+            UIToolsBuilder.CreateNumberInput(container, (int)((width - 20) * inputWidthRatio), height, value, step).OnValueChangedEvent += onChange;
         }
     }
 }
